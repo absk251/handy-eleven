@@ -9,6 +9,7 @@ mod chinese_script;
 pub mod cli;
 mod clipboard;
 mod commands;
+mod elevenlabs;
 pub mod engine_supervisor;
 mod helpers;
 mod input;
@@ -321,7 +322,7 @@ fn initialize_core_logic(app_handle: &AppHandle) {
             id if id.starts_with("model_select:") => {
                 let model_id = id.strip_prefix("model_select:").unwrap().to_string();
                 let current_model = settings::get_settings(app).selected_model;
-                if model_id == current_model {
+                if model_id == current_model && !settings::get_settings(app).elevenlabs_enabled {
                     return;
                 }
                 let app_clone = app.clone();
@@ -530,6 +531,12 @@ fn run_headless_transcription(app: &AppHandle, args: &CliArgs) -> i32 {
             return 2;
         }
     };
+    if get_settings(app).elevenlabs_enabled {
+        eprintln!(
+            "error: --transcribe-file is local-only. Select a local model in Handy Eleven first."
+        );
+        return 2;
+    }
     let audio_secs = samples.len() as f64 / 16_000.0;
 
     let tm = app.state::<Arc<TranscriptionManager>>();
@@ -730,6 +737,9 @@ pub fn run(cli_args: CliArgs) {
             commands::check_apple_intelligence_available,
             commands::initialize_enigo,
             commands::initialize_shortcuts,
+            elevenlabs::get_elevenlabs_status,
+            elevenlabs::configure_elevenlabs,
+            elevenlabs::remove_elevenlabs_key,
             commands::models::get_available_models,
             commands::models::get_model_info,
             commands::models::download_model,

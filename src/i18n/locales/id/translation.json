@@ -724,5 +724,23 @@
     "learnMore": "Cara memperbaiki",
     "recorderBlocked": "Pintasan tidak dapat direkam saat ini — macOS Secure Input memblokir peristiwa tombol. Selesaikan peringatan Secure Input terlebih dahulu.",
     "dismiss": "Tutup"
+  },
+  "elevenlabs": {
+    "title": "ElevenLabs · Cloud transcription",
+    "description": "Record with your usual shortcut. When you stop, audio is sent to ElevenLabs using your account credits. Internet is required. This is batch transcription, without a live preview.",
+    "model": "Transcription model",
+    "scribeV2": "Scribe v2 (recommended)",
+    "scribeV1": "Scribe v1",
+    "apiKey": "ElevenLabs API key",
+    "enterKey": "Paste your API key",
+    "replaceKey": "Key saved — enter a new key to replace it",
+    "keyStorage": "Saved in macOS Keychain or Windows Credential Manager, separately on each computer. The key needs Speech-to-Text access. Saving does not test or bill an API request.",
+    "activate": "Save and use ElevenLabs",
+    "saving": "Saving…",
+    "useLocal": "Use previous local model",
+    "forgetKey": "Remove saved key",
+    "activated": "ElevenLabs selected",
+    "localSelected": "Local transcription selected",
+    "activeModel": "ElevenLabs · {{model}}"
   }
 }

@@ -512,6 +512,12 @@ jobs:
           chmod +x "$tools_dir/linuxdeploy-${arch}.AppImage"
           "$tools_dir/linuxdeploy-${arch}.AppImage" --appimage-extract-and-run --version
 
+      - name: Test ElevenLabs request contract
+        if: contains(inputs.platform, 'macos')
+        run: |
+          bun run build
+          cargo test --manifest-path src-tauri/Cargo.toml --lib elevenlabs::client::tests
+
       - name: Build with Tauri
         uses: tauri-apps/tauri-action@v0
         env:

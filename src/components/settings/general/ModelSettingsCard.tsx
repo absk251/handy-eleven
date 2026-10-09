@@ -6,9 +6,19 @@ import { TranslateToEnglish } from "../TranslateToEnglish";
 import { useModelStore } from "../../../stores/modelStore";
 import type { ModelInfo } from "@/bindings";
 
+import { useSettings } from "@/hooks/useSettings";
+
 export const ModelSettingsCard: React.FC = () => {
   const { t } = useTranslation();
   const { currentModel, models } = useModelStore();
+  const { settings } = useSettings();
+  if (settings?.elevenlabs_enabled) {
+    return (
+      <SettingsGroup title={t("elevenlabs.title")}>
+        <LanguageSelector />
+      </SettingsGroup>
+    );
+  }
 
   const currentModelInfo = models.find((m: ModelInfo) => m.id === currentModel);
 

@@ -19,6 +19,9 @@ import {
 } from "@/lib/constants/languages.ts";
 import type { ModelInfo } from "@/bindings";
 
+import { ElevenLabsSettings } from "./ElevenLabsSettings";
+import { useSettings } from "@/hooks/useSettings";
+
 // check if model supports a language based on its supported_languages list
 const modelSupportsLanguage = (model: ModelInfo, langCode: string): boolean => {
   return supportsLanguageCode(model.supported_languages, langCode);
@@ -32,6 +35,7 @@ const isLegacyModel = (model: ModelInfo): boolean =>
 
 export const ModelsSettings: React.FC = () => {
   const { t } = useTranslation();
+  const { settings } = useSettings();
   const [switchingModelId, setSwitchingModelId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [filterStreaming, setFilterStreaming] = useState(false);
@@ -114,7 +118,7 @@ export const ModelsSettings: React.FC = () => {
     if (!model?.is_downloaded) {
       return "downloadable";
     }
-    if (modelId === currentModel) {
+    if (modelId === currentModel && !settings?.elevenlabs_enabled) {
       return "active";
     }
     return "available";
@@ -247,6 +251,8 @@ export const ModelsSettings: React.FC = () => {
           {t("settings.models.description")}
         </p>
       </div>
+
+      <ElevenLabsSettings />
 
       {/* Search bar — filter the catalog by name or description */}
       <div className="relative">

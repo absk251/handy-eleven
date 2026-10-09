@@ -227,6 +227,10 @@ pub fn refresh_tray_icon(app: &AppHandle) {
 
 /// Re-syncs the tray after something the menu depends on changed (model
 /// list/selection/loaded state, language, settings).
+pub fn is_busy(app: &AppHandle) -> bool {
+    app.state::<TrayState>().lock().icon_state.is_busy()
+}
+
 pub fn update_tray_menu(app: &AppHandle) {
     sync_tray(app);
 }
@@ -330,10 +334,15 @@ fn compute_desired(app: &AppHandle, icon_state: TrayIconState) -> TrayDesired {
             busy: icon_state.is_busy(),
             warning,
             model_loaded,
-            selected_model: settings.selected_model,
+            selected_model: if settings.elevenlabs_enabled {
+                format!("elevenlabs:{}", settings.elevenlabs_model)
+            } else {
+                settings.selected_model
+            },
             downloaded_models,
             locale: settings.app_language,
-            update_checks_enabled: settings.update_checks_enabled,
+            update_checks_enabled: settings.update_checks_enabled
+                && !crate::settings::update_checks_forced_disabled(),
         },
     }
 }
@@ -445,9 +454,9 @@ pub fn tray_tooltip() -> String {
 
 fn version_label() -> String {
     if cfg!(debug_assertions) {
-        format!("Handy v{} (Dev)", env!("CARGO_PKG_VERSION"))
+        format!("Handy Eleven v{} (Dev)", env!("CARGO_PKG_VERSION"))
     } else {
-        format!("Handy v{}", env!("CARGO_PKG_VERSION"))
+        format!("Handy Eleven v{}", env!("CARGO_PKG_VERSION"))
     }
 }
 
@@ -536,7 +545,13 @@ fn build_menu(app: &AppHandle, inputs: &MenuInputs) -> tauri::Result<(Menu<tauri
             .iter()
             .find(|(id, _)| *id == inputs.selected_model)
             .map(|(_, name)| name.clone())
-            .unwrap_or_else(|| strings.model.clone());
+            .unwrap_or_else(|| {
+                inputs
+                    .selected_model
+                    .strip_prefix("elevenlabs:")
+                    .map(|model| format!("ElevenLabs · {model}"))
+                    .unwrap_or_else(|| strings.model.clone())
+            });
 
         let model_submenu = Submenu::with_id(app, "model_submenu", &submenu_label, true)?;
         for (id, name) in &inputs.downloaded_models {

@@ -97,6 +97,9 @@ pub async fn delete_model(
 /// unless the unload timeout is set to "Immediately" (in which case the model
 /// will be loaded on-demand during the next transcription).
 pub fn switch_active_model(app: &AppHandle, model_id: &str) -> Result<(), String> {
+    if crate::tray::is_busy(app) {
+        return Err("Finish or cancel transcription before switching models.".to_string());
+    }
     let model_manager = app.state::<Arc<ModelManager>>();
     let transcription_manager = app.state::<Arc<TranscriptionManager>>();
 
@@ -119,12 +122,14 @@ pub fn switch_active_model(app: &AppHandle, model_id: &str) -> Result<(), String
     let settings = get_settings(app);
     let unload_timeout = settings.model_unload_timeout;
     let old_model = settings.selected_model.clone();
+    let old_elevenlabs_enabled = settings.elevenlabs_enabled;
     let old_onboarding_completed = settings.onboarding_completed;
 
     // Persist the new selection early so the frontend sees the correct model
     // when it reacts to events emitted by load_model.
     let mut settings = settings;
     settings.selected_model = model_id.to_string();
+    settings.elevenlabs_enabled = false;
     settings.onboarding_completed = true;
 
     write_settings(app, settings);
@@ -147,6 +152,7 @@ pub fn switch_active_model(app: &AppHandle, model_id: &str) -> Result<(), String
             "Model selection changed to {} (not loading — unload set to Immediately).",
             model_id
         );
+        let _ = app.emit("settings-changed", serde_json::json!({}));
         return Ok(());
     }
 
@@ -154,11 +160,13 @@ pub fn switch_active_model(app: &AppHandle, model_id: &str) -> Result<(), String
     if let Err(e) = transcription_manager.load_model(model_id) {
         let mut settings = get_settings(app);
         settings.selected_model = old_model;
+        settings.elevenlabs_enabled = old_elevenlabs_enabled;
         settings.onboarding_completed = old_onboarding_completed;
         write_settings(app, settings);
         return Err(e.to_string());
     }
 
+    let _ = app.emit("settings-changed", serde_json::json!({}));
     Ok(())
 }
 

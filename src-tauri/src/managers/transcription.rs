@@ -775,6 +775,9 @@ impl TranscriptionManager {
 
     /// Kicks off the model loading in a background thread if it's not already loaded
     pub fn initiate_model_load(&self) {
+        if get_settings(&self.app_handle).elevenlabs_enabled {
+            return;
+        }
         let mut is_loading = self.is_loading.lock().unwrap();
         if *is_loading {
             return;
@@ -1145,6 +1148,22 @@ impl TranscriptionManager {
             debug!("Empty audio vector");
             self.maybe_unload_immediately("empty audio");
             return Ok(String::new());
+        }
+
+        let settings = get_settings(&self.app_handle);
+        if settings.elevenlabs_enabled {
+            let result = crate::elevenlabs::transcribe(&audio, &settings)?;
+            let evidence = result
+                .language_code
+                .map(OutputLanguageEvidence::ModelDetected)
+                .unwrap_or(OutputLanguageEvidence::Unknown);
+            return Ok(post_process_transcription_text(
+                result.text,
+                &settings,
+                false,
+                &evidence,
+                &[],
+            ));
         }
 
         // Check if model is loaded, if not try to load it

@@ -1,3 +1,42 @@
+# Handy Eleven
+
+Personal fork of [Handy](https://github.com/cjpais/Handy) with optional ElevenLabs speech-to-text for macOS and Windows. Upstream MIT license retained.
+
+## Install
+
+Open [Actions → Handy Eleven installers](https://github.com/absk251/handy-eleven/actions/workflows/main-build.yml), choose a successful run, and download the artifact for your computer:
+
+- `handy-eleven-aarch64-apple-darwin`: Apple Silicon Mac (M1 and newer), `.dmg`.
+- `handy-eleven-x86_64-apple-darwin`: Intel Mac, `.dmg`.
+- `handy-eleven-x86_64-pc-windows-msvc`: Windows x64, `.exe` / `.msi`.
+
+Artifacts are produced by a push to `main` or **Run workflow**. If Actions is disabled on the fork, enable it in the Actions tab first. A source checkout is not an installer; only successful build artifacts should be installed.
+
+These are personal, unsigned Windows / ad-hoc signed Mac builds. macOS Gatekeeper and Windows SmartScreen may warn. macOS may require **System Settings → Privacy & Security → Open Anyway** for a build you trust. No Apple or Microsoft signing credentials are bundled. The application installs as **Handy Eleven**, uses its own settings directory and application identifier, and cannot auto-update to official Handy. Future updates are manual installs from this fork.
+
+## ElevenLabs setup
+
+1. Grant microphone/accessibility permissions.
+2. On the model onboarding screen (or **Models → ElevenLabs**), enter your own ElevenLabs API key with Speech-to-Text access.
+3. Select **Scribe v2** (default) or **Scribe v1** and click **Save and use ElevenLabs**.
+4. Record with Handy's shortcut, then stop. The result is pasted through the existing Handy pipeline.
+
+Keys live in **macOS Keychain / Windows Credential Manager**, separately on each computer, never in settings JSON or source control. Saving a key is local-only; the first transcription verifies it with ElevenLabs. API usage is charged to your ElevenLabs account. Recordings are sent to ElevenLabs only while cloud transcription is selected. Handy still saves local transcription history/recordings according to its retention settings.
+
+Language selection (including automatic detection), local custom-word correction, and the existing post-processing/paste flow are retained. Select a downloaded local model to return to offline transcription. The previous local model remains remembered. New ElevenLabs UI copy is English and Russian; other locales fall back to English for this section.
+
+This integration uses the **batch** endpoint after recording stops. It does not support Scribe Realtime/live preview, cloud translation, paid keyterm biasing, or automatic retries. The local benchmarking CLI `--transcribe-file` requires selecting a local model first. ElevenLabs key storage is intentionally available only on macOS and Windows.
+
+## Development and attribution
+
+Based on upstream `f6b3f82`. The closed [PR #1241](https://github.com/cjpais/Handy/pull/1241) by christophostertag informed the WAV/multipart approach; this fork adapts the integration to current Handy rather than merging that outdated branch.
+
+See [BUILD.md](BUILD.md) for native dependencies. Run `bun run build`, `bun run lint`, `bun run check:translations`, `bun run format:check`, `bun run test:playwright`, and `cargo test --manifest-path src-tauri/Cargo.toml --lib elevenlabs::client::tests`. Request-contract tests use a local mock HTTP server and no API credentials. Native installer builds run on GitHub's Mac/Windows runners.
+
+---
+
+## Upstream README (describes official Handy's local-only behavior)
+
 # Handy
 
 [![Discord](https://img.shields.io/badge/Discord-%235865F2.svg?style=for-the-badge&logo=discord&logoColor=white)](https://discord.com/invite/WVBeWsNXK4)

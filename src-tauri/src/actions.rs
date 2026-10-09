@@ -406,7 +406,7 @@ impl ShortcutAction for TranscribeAction {
 
         // Don't open the mic if nothing can transcribe the recording; the load
         // kicked off above fails and reports why.
-        if !tm.is_model_loaded() {
+        if !get_settings(app).elevenlabs_enabled && !tm.is_model_loaded() {
             let selected_model = get_settings(app).selected_model;
             if let Err(e) = app
                 .state::<Arc<ModelManager>>()
@@ -434,10 +434,11 @@ impl ShortcutAction for TranscribeAction {
         // Use the app-facing model capability as the single pre-recording source
         // for live streaming decisions. Unknown support is represented as false
         // until the model registry is updated by discovery or runtime load.
-        let model_supports_streaming = selected_model_info
-            .as_ref()
-            .map(|m| m.supports_streaming)
-            .unwrap_or(false);
+        let model_supports_streaming = !settings.elevenlabs_enabled
+            && selected_model_info
+                .as_ref()
+                .map(|m| m.supports_streaming)
+                .unwrap_or(false);
         let vad_policy = if !settings.vad_enabled {
             VadPolicy::Disabled
         } else if model_supports_streaming {
@@ -655,7 +656,15 @@ impl ShortcutAction for TranscribeAction {
                         // transcription of the same audio. A cancelled finalize is
                         // surfaced instead, so a cancel never starts a batch run.
                         Ok(Some(text)) if !text.trim().is_empty() => Ok(text),
-                        Ok(_) => tm.transcribe(samples),
+                        Ok(_) => {
+                            let tm = Arc::clone(&tm);
+                            // Cloud HTTP and local inference are blocking work.
+                            tauri::async_runtime::spawn_blocking(move || tm.transcribe(samples))
+                                .await
+                                .unwrap_or_else(|e| {
+                                    Err(anyhow::anyhow!("Transcription worker failed: {e}"))
+                                })
+                        }
                         Err(err) => Err(err),
                     };
 

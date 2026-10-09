@@ -10,6 +10,8 @@ import DownloadProgressDisplay from "./DownloadProgressDisplay";
 
 import { ModelStateEvent } from "@/lib/types/events";
 
+import { useSettings } from "@/hooks/useSettings";
+
 type ModelStatus =
   | "ready"
   | "loading"
@@ -26,6 +28,7 @@ interface ModelSelectorProps {
 
 const ModelSelector: React.FC<ModelSelectorProps> = ({ onError }) => {
   const { t } = useTranslation();
+  const { settings } = useSettings();
   const {
     models,
     currentModel,
@@ -105,7 +108,12 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({ onError }) => {
         setTimeout(async () => {
           try {
             const isRecording = await commands.isRecording();
-            if (!isRecording) {
+            const latestSettings = await commands.getAppSettings();
+            if (
+              !isRecording &&
+              latestSettings.status === "ok" &&
+              !latestSettings.data.elevenlabs_enabled
+            ) {
               setPendingModelId(modelId);
               setModelError(null);
               setShowModelDropdown(false);
@@ -154,6 +162,8 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({ onError }) => {
   };
 
   const getModelDisplayText = (): string => {
+    if (settings?.elevenlabs_enabled)
+      return t("elevenlabs.activeModel", { model: settings.elevenlabs_model });
     const verifyingKeys = Object.keys(verifyingModels);
     if (verifyingKeys.length > 0) {
       if (verifyingKeys.length === 1) {
@@ -239,6 +249,7 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({ onError }) => {
     if (Object.keys(verifyingModels).length > 0) return "verifying";
     if (Object.keys(extractingModels).length > 0) return "extracting";
     if (Object.keys(downloadProgress).length > 0) return "downloading";
+    if (settings?.elevenlabs_enabled) return "ready";
     return modelStatus;
   };
 
@@ -257,7 +268,7 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({ onError }) => {
         {showModelDropdown && (
           <ModelDropdown
             models={models}
-            currentModelId={displayModelId}
+            currentModelId={settings?.elevenlabs_enabled ? "" : displayModelId}
             onModelSelect={handleModelSelect}
           />
         )}
