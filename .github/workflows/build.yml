@@ -514,11 +514,34 @@ jobs:
 
       - name: Test ElevenLabs request contract
         if: contains(inputs.platform, 'macos')
+        shell: bash
         run: |
           bun run build
+          # Intel macOS links ONNX dynamically. Cargo's test binary is outside
+          # the app bundle, so give dyld the downloaded runtime directory.
+          if [ -n "${ORT_LIB_LOCATION:-}" ]; then
+            export DYLD_LIBRARY_PATH="$ORT_LIB_LOCATION${DYLD_LIBRARY_PATH:+:$DYLD_LIBRARY_PATH}"
+          fi
           cargo test --manifest-path src-tauri/Cargo.toml --lib elevenlabs::client::tests
 
+      # Empty APPLE_CERTIFICATE still makes Tauri attempt certificate import.
+      # Keep signing credentials entirely absent for the fork's ad-hoc builds.
+      - name: Build with Tauri (unsigned)
+        if: ${{ !inputs.sign-binaries }}
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          LINUXDEPLOY_EXCLUDED_LIBRARIES: ${{ contains(inputs.platform, 'ubuntu') && 'libvulkan.so*;libwayland-client.so*' || '' }}
+          LINUXDEPLOY_OUTPUT_VERSION: ${{ contains(inputs.platform, 'ubuntu') && steps.get-version.outputs.version || '' }}
+        with:
+          tagName: ${{ inputs.release-id && format('v{0}', steps.get-version.outputs.version) || '' }}
+          releaseName: ${{ inputs.release-id && format('v{0}', steps.get-version.outputs.version) || '' }}
+          releaseId: ${{ inputs.release-id }}
+          assetNamePattern: ${{ steps.patch-release-name.outputs.platform }}
+          args: ${{ inputs.build-args }}
+
       - name: Build with Tauri
+        if: inputs.sign-binaries
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
