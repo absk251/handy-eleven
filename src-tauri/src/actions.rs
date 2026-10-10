@@ -94,6 +94,23 @@ fn is_blank_transcription(transcription: &str) -> bool {
     transcription.trim().is_empty()
 }
 
+/// Keep cloud streaming terminal: an empty transcript or network failure must
+/// never resend already-uploaded audio through the paid batch endpoint.
+fn finish_selected_transcription<E>(
+    cloud_realtime: bool,
+    finish_cloud: impl FnOnce() -> Result<String, E>,
+    finish_local: impl FnOnce() -> Result<Option<String>, E>,
+    batch: impl FnOnce() -> Result<String, E>,
+) -> Result<String, E> {
+    if cloud_realtime {
+        return finish_cloud();
+    }
+    match finish_local()? {
+        Some(text) if !text.trim().is_empty() => Ok(text),
+        _ => batch(),
+    }
+}
+
 async fn complete_unless_cancelled<F, C>(operation: F, is_cancelled: C) -> Option<F::Output>
 where
     F: Future,
@@ -434,19 +451,34 @@ impl ShortcutAction for TranscribeAction {
         // Use the app-facing model capability as the single pre-recording source
         // for live streaming decisions. Unknown support is represented as false
         // until the model registry is updated by discovery or runtime load.
-        let model_supports_streaming = !settings.elevenlabs_enabled
-            && selected_model_info
-                .as_ref()
-                .map(|m| m.supports_streaming)
-                .unwrap_or(false);
-        let vad_policy = if !settings.vad_enabled {
+        let cloud_realtime = crate::elevenlabs::realtime_selected(&settings);
+        let model_supports_streaming = cloud_realtime
+            || (!settings.elevenlabs_enabled
+                && selected_model_info
+                    .as_ref()
+                    .map(|m| m.supports_streaming)
+                    .unwrap_or(false));
+        // The server needs the continuous timeline, including quiet pauses.
+        let vad_policy = if cloud_realtime || !settings.vad_enabled {
             VadPolicy::Disabled
         } else if model_supports_streaming {
             VadPolicy::Streaming
         } else {
             VadPolicy::Offline
         };
-        if model_supports_streaming {
+        if cloud_realtime {
+            if let Err(err) = tm.start_cloud_stream(&settings) {
+                set_tray_state(app, TrayIconState::Idle);
+                let _ = app.emit(
+                    "recording-error",
+                    RecordingErrorEvent {
+                        error_type: "unknown".to_string(),
+                        detail: Some(err.to_string()),
+                    },
+                );
+                return;
+            }
+        } else if model_supports_streaming {
             tm.start_stream();
         }
         let plan_elapsed = plan_started.elapsed();
@@ -584,7 +616,11 @@ impl ShortcutAction for TranscribeAction {
         // the larger panel, but it still switches from listening to a working
         // spinner while the stream finalizes. Non-streaming paths use the
         // compact transcribing pill (None no-ops in show_*).
-        let style = get_settings(app).overlay_style;
+        let stop_settings = get_settings(app);
+        let style = stop_settings.overlay_style;
+        // Snapshot the provider before async finalization/cancellation; a
+        // missing cloud session must not trigger a second, paid batch request.
+        let cloud_realtime = crate::elevenlabs::realtime_selected(&stop_settings);
         // Capture this before finalizing the stream so every later working state
         // targets the same overlay that was shown for this transcription.
         let use_streaming_overlay = should_use_streaming_overlay(style, tm.is_streaming());
@@ -649,24 +685,17 @@ impl ShortcutAction for TranscribeAction {
                     // running, finalize it and use its text (all audio was already
                     // fed to the stream); otherwise batch-transcribe the samples.
                     let transcription_time = Instant::now();
-                    let transcription_result = match tm.finalize_stream() {
-                        // A finalized stream with usable text wins. An empty result
-                        // (no active stream, produced nothing, or the stream failed
-                        // or its worker crashed) falls back to a full batch
-                        // transcription of the same audio. A cancelled finalize is
-                        // surfaced instead, so a cancel never starts a batch run.
-                        Ok(Some(text)) if !text.trim().is_empty() => Ok(text),
-                        Ok(_) => {
-                            let tm = Arc::clone(&tm);
-                            // Cloud HTTP and local inference are blocking work.
-                            tauri::async_runtime::spawn_blocking(move || tm.transcribe(samples))
-                                .await
-                                .unwrap_or_else(|e| {
-                                    Err(anyhow::anyhow!("Transcription worker failed: {e}"))
-                                })
-                        }
-                        Err(err) => Err(err),
-                    };
+                    let transcription_manager = Arc::clone(&tm);
+                    let transcription_result = tauri::async_runtime::spawn_blocking(move || {
+                        finish_selected_transcription(
+                            cloud_realtime,
+                            || transcription_manager.finalize_cloud_stream(),
+                            || transcription_manager.finalize_stream(),
+                            || transcription_manager.transcribe(samples),
+                        )
+                    })
+                    .await
+                    .unwrap_or_else(|e| Err(anyhow::anyhow!("Transcription worker failed: {e}")));
 
                     // Await WAV save and verify
                     let wav_saved = match wav_handle.await {
@@ -892,8 +921,8 @@ pub static ACTION_MAP: Lazy<HashMap<String, Arc<dyn ShortcutAction>>> = Lazy::ne
 #[cfg(test)]
 mod tests {
     use super::{
-        complete_unless_cancelled, is_blank_transcription, should_use_streaming_overlay,
-        strip_think_block,
+        complete_unless_cancelled, finish_selected_transcription, is_blank_transcription,
+        should_use_streaming_overlay, strip_think_block,
     };
     use crate::settings::OverlayStyle;
     use std::future;
@@ -901,6 +930,59 @@ mod tests {
     use std::sync::Arc;
     use std::thread;
     use std::time::Duration;
+
+    #[test]
+    fn realtime_never_falls_back_for_success_silence_or_failure() {
+        for cloud_result in [
+            Ok("hello".to_string()),
+            Ok(String::new()),
+            Err("disconnected"),
+        ] {
+            let expected = cloud_result.clone();
+            let actual = finish_selected_transcription(
+                true,
+                || cloud_result,
+                || panic!("realtime must not use the local stream"),
+                || panic!("realtime must not upload a second paid batch request"),
+            );
+            assert_eq!(actual, expected);
+        }
+    }
+
+    #[test]
+    fn local_stream_retains_batch_fallback_only_when_unusable() {
+        for local_result in [None, Some(String::new()), Some("  ".into())] {
+            let actual = finish_selected_transcription::<&str>(
+                false,
+                || panic!("local transcription must not call ElevenLabs Realtime"),
+                || Ok(local_result),
+                || Ok("batch transcript".into()),
+            );
+            assert_eq!(actual, Ok("batch transcript".into()));
+        }
+        assert_eq!(
+            finish_selected_transcription::<&str>(
+                false,
+                || panic!("cloud unexpectedly used"),
+                || Ok(Some("stream transcript".into())),
+                || panic!("usable stream must not be retranscribed"),
+            ),
+            Ok("stream transcript".into()),
+        );
+    }
+
+    #[test]
+    fn cancelled_local_finalize_never_starts_batch() {
+        assert_eq!(
+            finish_selected_transcription(
+                false,
+                || panic!("cloud unexpectedly used"),
+                || Err("cancelled"),
+                || panic!("cancel must not start batch work"),
+            ),
+            Err("cancelled"),
+        );
+    }
 
     #[test]
     fn blank_transcription_is_detected() {

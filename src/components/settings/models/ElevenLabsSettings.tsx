@@ -92,6 +92,7 @@ export function ElevenLabsSettings({
         <span>{t("elevenlabs.model")}</span>
         <select
           aria-label={t("elevenlabs.model")}
+          aria-describedby="elevenlabs-mode-description"
           value={model}
           disabled={locked}
           onChange={(e) => setModel(e.target.value)}
@@ -99,8 +100,18 @@ export function ElevenLabsSettings({
         >
           <option value="scribe_v2">{t("elevenlabs.scribeV2")}</option>
           <option value="scribe_v1">{t("elevenlabs.scribeV1")}</option>
+          <option value="scribe_v2_realtime">
+            {t("elevenlabs.scribeV2Realtime")}
+          </option>
         </select>
       </label>
+      <p id="elevenlabs-mode-description" className="text-sm text-text/70">
+        {t(
+          model === "scribe_v2_realtime"
+            ? "elevenlabs.realtimeDescription"
+            : "elevenlabs.batchDescription",
+        )}
+      </p>
       <label className="block text-sm space-y-1">
         <span>{t("elevenlabs.apiKey")}</span>
         <input

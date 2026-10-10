@@ -1,4 +1,4 @@
-//! Opt-in ElevenLabs batch transcription. Credentials never enter settings JSON.
+//! Opt-in ElevenLabs transcription. Credentials never enter settings JSON.
 //! WAV/multipart approach informed by christophostertag/Handy PR #1241 (MIT).
 use crate::managers::{audio::AudioRecordingManager, transcription::TranscriptionManager};
 use crate::settings::{get_settings, write_settings, AppSettings};
@@ -12,7 +12,23 @@ use tauri::{AppHandle, Emitter, Manager};
 
 const ENDPOINT: &str = "https://api.elevenlabs.io/v1/speech-to-text";
 mod client;
+pub mod realtime;
 use client::{send_transcription, validate_model, Transcript};
+
+pub fn realtime_selected(settings: &AppSettings) -> bool {
+    settings.elevenlabs_enabled && settings.elevenlabs_model == "scribe_v2_realtime"
+}
+
+pub fn start_realtime(
+    settings: &AppSettings,
+    on_partial: Arc<dyn Fn(String, String) + Send + Sync>,
+) -> Result<realtime::RealtimeSession> {
+    realtime::RealtimeSession::start(
+        || read_key()?.context("Add your ElevenLabs API key in Models > ElevenLabs"),
+        settings.selected_language.clone(),
+        on_partial,
+    )
+}
 
 static CREDENTIAL_LOCK: Mutex<()> = Mutex::new(());
 
@@ -79,7 +95,9 @@ pub async fn configure_elevenlabs(
 ) -> Result<ElevenLabsStatus, String> {
     tauri::async_runtime::spawn_blocking(move || -> Result<ElevenLabsStatus> {
         ensure_idle(&app)?;
-        validate_model(&model)?;
+        if model != "scribe_v2_realtime" {
+            validate_model(&model)?;
+        }
         if let Some(key) = api_key {
             let key = key.trim();
             if key.is_empty() || key.contains(['\r', '\n']) {

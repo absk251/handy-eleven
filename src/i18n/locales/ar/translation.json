@@ -727,10 +727,10 @@
   },
   "elevenlabs": {
     "title": "ElevenLabs · Cloud transcription",
-    "description": "Record with your usual shortcut. When you stop, audio is sent to ElevenLabs using your account credits. Internet is required. This is batch transcription, without a live preview.",
+    "description": "Record with your usual shortcut. Cloud transcription requires internet and uses your ElevenLabs account credits.",
     "model": "Transcription model",
-    "scribeV2": "Scribe v2 (recommended)",
-    "scribeV1": "Scribe v1",
+    "scribeV2": "Scribe v2 (after recording, default)",
+    "scribeV1": "Scribe v1 (after recording)",
     "apiKey": "ElevenLabs API key",
     "enterKey": "Paste your API key",
     "replaceKey": "Key saved — enter a new key to replace it",
@@ -741,6 +741,9 @@
     "forgetKey": "Remove saved key",
     "activated": "ElevenLabs selected",
     "localSelected": "Local transcription selected",
-    "activeModel": "ElevenLabs · {{model}}"
+    "activeModel": "ElevenLabs · {{model}}",
+    "scribeV2Realtime": "Scribe v2 Realtime (stream while speaking)",
+    "batchDescription": "Audio is sent to ElevenLabs after you stop recording. The completed text is then pasted into your app.",
+    "realtimeDescription": "Audio is sent to ElevenLabs while you record, reducing the wait after you stop. Choose the Live recording overlay to see partial text. Final text is pasted after you stop; a short finalization delay can remain. Cancelling cannot recall audio already sent."
   }
 }

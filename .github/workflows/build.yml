@@ -512,7 +512,7 @@ jobs:
           chmod +x "$tools_dir/linuxdeploy-${arch}.AppImage"
           "$tools_dir/linuxdeploy-${arch}.AppImage" --appimage-extract-and-run --version
 
-      - name: Test ElevenLabs request contract
+      - name: Test ElevenLabs batch and realtime contracts
         if: contains(inputs.platform, 'macos')
         shell: bash
         run: |
@@ -522,7 +522,8 @@ jobs:
           if [ -n "${ORT_LIB_LOCATION:-}" ]; then
             export DYLD_LIBRARY_PATH="$ORT_LIB_LOCATION${DYLD_LIBRARY_PATH:+:$DYLD_LIBRARY_PATH}"
           fi
-          cargo test --manifest-path src-tauri/Cargo.toml --lib elevenlabs::client::tests
+          cargo test --manifest-path src-tauri/Cargo.toml --lib elevenlabs::
+          cargo test --manifest-path src-tauri/Cargo.toml --lib actions::tests
 
       # Empty APPLE_CERTIFICATE still makes Tauri attempt certificate import.
       # Keep signing credentials entirely absent for the fork's ad-hoc builds.

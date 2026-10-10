@@ -16,7 +16,10 @@ import { ElevenLabsSettings } from '/src/components/settings/models/ElevenLabsSe
 await i18n.changeLanguage('en');
 const settings = () => ({selected_model:'local-model',elevenlabs_enabled:window.cloud.enabled,elevenlabs_model:window.cloud.model});
 useSettingsStore.setState({isLoading:false,settings:settings(),refreshSettings:async()=>{useSettingsStore.setState({settings:settings()})}});
-ReactDOM.createRoot(document.getElementById('test-root')).render(React.createElement(ElevenLabsSettings,{onActivated:()=>{window.activated=true}}));
+const root = ReactDOM.createRoot(document.getElementById('test-root'));
+let mount = 0;
+window.remountCloudSettings = () => root.render(React.createElement('div',{key:++mount,'data-mount':mount},React.createElement(ElevenLabsSettings,{onActivated:()=>{window.activated=true}})));
+window.remountCloudSettings();
 </script></body></html>`;
 
 test.beforeEach(async ({ page }) => {
@@ -96,4 +99,52 @@ test("credential errors keep onboarding incomplete and show a useful error", asy
   await page.getByRole("button", { name: "Save and use ElevenLabs" }).click();
   await expect(page.getByRole("alert")).toHaveText("Credential store locked");
   expect(await page.evaluate("window.activated")).toBe(false);
+});
+
+test("keeps batch as default and restores a saved realtime choice", async ({
+  page,
+}) => {
+  const models = page.getByLabel("Transcription model", { exact: true });
+  const save = page.getByRole("button", { name: "Save and use ElevenLabs" });
+  await expect(models).toHaveValue("scribe_v2");
+  await expect(
+    page.getByText("Audio is sent to ElevenLabs after you stop recording.", {
+      exact: false,
+    }),
+  ).toBeVisible();
+  await models.selectOption("scribe_v2_realtime");
+  await expect(
+    page.getByText("Audio is sent to ElevenLabs while you record", {
+      exact: false,
+    }),
+  ).toBeVisible();
+  await page
+    .getByLabel("ElevenLabs API key", { exact: true })
+    .fill("fake-test-key");
+  await save.click();
+  await expect(
+    page.getByText("ElevenLabs · scribe_v2_realtime", { exact: true }),
+  ).toBeVisible();
+  expect(await page.evaluate("window.calls[0]")).toEqual({
+    enabled: true,
+    model: "scribe_v2_realtime",
+    apiKey: "fake-test-key",
+  });
+  await page.evaluate("window.remountCloudSettings()");
+  await expect(page.locator('[data-mount="2"]')).toBeVisible();
+  await expect(models).toBeEnabled();
+  await expect(models).toHaveValue("scribe_v2_realtime");
+  await expect(
+    page.getByLabel("ElevenLabs API key", { exact: true }),
+  ).toHaveValue("");
+  await models.selectOption("scribe_v2");
+  await save.click();
+  await expect(
+    page.getByText("ElevenLabs · scribe_v2", { exact: true }),
+  ).toBeVisible();
+  expect(await page.evaluate("window.calls[1]")).toEqual({
+    enabled: true,
+    model: "scribe_v2",
+    apiKey: null,
+  });
 });

@@ -3,6 +3,7 @@ use crate::audio_toolkit::{
     remove_filler_words, OutputLanguageEvidence,
 };
 use crate::chinese_script::{convert_chinese_script, ChineseVariety};
+use crate::elevenlabs::realtime::RealtimeSession;
 use crate::engine_supervisor::{
     DeviceInfo, DeviceSelector, EngineError, EngineSupervisor, LoadSpec, LoadedInfo,
     StreamProgress, Unloading,
@@ -126,6 +127,7 @@ pub struct StreamRouter {
     /// Command channel to the active streaming worker, present from
     /// `start_stream` until `finalize_stream`/`cancel_stream`.
     tx: Mutex<Option<mpsc::Sender<StreamCmd>>>,
+    cloud: Mutex<Option<Arc<RealtimeSession>>>,
     /// True while a stream is pending or active (channel is open). The audio
     /// callback checks this first to avoid the mutex lock when no stream runs.
     open: Arc<AtomicBool>,
@@ -135,6 +137,7 @@ impl StreamRouter {
     fn new() -> Self {
         Self {
             tx: Mutex::new(None),
+            cloud: Mutex::new(None),
             open: Arc::new(AtomicBool::new(false)),
         }
     }
@@ -167,6 +170,10 @@ impl StreamRouter {
     /// single relaxed atomic load) when no stream is pending.
     pub fn feed(&self, frame: &[f32]) {
         if !self.open.load(Ordering::Relaxed) {
+            return;
+        }
+        if let Some(session) = self.cloud.lock().unwrap().as_ref() {
+            session.feed(frame);
             return;
         }
         if let Some(tx) = self.tx.lock().unwrap().as_ref() {
@@ -273,6 +280,10 @@ pub struct TranscriptionManager {
     /// yet. This prevents a second worker from starting after finalize/cancel
     /// closes the router but before the first worker has fully exited.
     active_stream_worker: Arc<AtomicU64>,
+    /// Retained through finalization so Escape can cancel network work even
+    /// after the recorder's route closes.
+    cloud_stream: Arc<Mutex<Option<Arc<RealtimeSession>>>>,
+    cloud_generation: Arc<AtomicU64>,
 }
 
 impl TranscriptionManager {
@@ -293,6 +304,8 @@ impl TranscriptionManager {
             stream_active: Arc::new(AtomicBool::new(false)),
             next_stream_worker_id: Arc::new(AtomicU64::new(1)),
             active_stream_worker: Arc::new(AtomicU64::new(0)),
+            cloud_stream: Arc::new(Mutex::new(None)),
+            cloud_generation: Arc::new(AtomicU64::new(0)),
         };
 
         // Start the idle watcher
@@ -825,7 +838,68 @@ impl TranscriptionManager {
 
     /// Whether a live streaming run is currently in flight.
     pub fn is_streaming(&self) -> bool {
-        self.stream_active.load(Ordering::Acquire)
+        self.stream_active.load(Ordering::Acquire) || self.cloud_stream.lock().unwrap().is_some()
+    }
+
+    pub fn start_cloud_stream(&self, settings: &AppSettings) -> Result<()> {
+        let mut active = self.cloud_stream.lock().unwrap();
+        if active.is_some()
+            || self.router.is_open()
+            || self.active_stream_worker.load(Ordering::Acquire) != 0
+        {
+            anyhow::bail!("A transcription stream is still active. Try again shortly.");
+        }
+        let generation = self.cloud_generation.fetch_add(1, Ordering::AcqRel) + 1;
+        let current = Arc::clone(&self.cloud_generation);
+        let app = self.app_handle.clone();
+        let session = Arc::new(crate::elevenlabs::start_realtime(
+            settings,
+            Arc::new(move |committed, tentative| {
+                if current.load(Ordering::Acquire) == generation {
+                    emit_stream_text(&app, &committed, &tentative);
+                }
+            }),
+        )?);
+        *self.router.cloud.lock().unwrap() = Some(Arc::clone(&session));
+        *active = Some(session);
+        self.router.open.store(true, Ordering::Release);
+        Ok(())
+    }
+
+    /// Realtime errors and empty results are terminal: never silently resend
+    /// the recording through the paid batch endpoint.
+    pub fn finalize_cloud_stream(&self) -> Result<String> {
+        let session = self.cloud_stream.lock().unwrap().clone().ok_or_else(|| {
+            anyhow::anyhow!("ElevenLabs Realtime session was cancelled or not started.")
+        })?;
+        {
+            let mut route = self.router.cloud.lock().unwrap();
+            if route.as_ref().is_some_and(|s| Arc::ptr_eq(s, &session)) {
+                self.router.open.store(false, Ordering::Release);
+                route.take();
+            }
+        }
+        let result = session.finish();
+        {
+            let mut active = self.cloud_stream.lock().unwrap();
+            if active.as_ref().is_some_and(|s| Arc::ptr_eq(s, &session)) {
+                active.take();
+                self.cloud_generation.fetch_add(1, Ordering::AcqRel);
+            }
+        }
+        let result = result?;
+        let settings = get_settings(&self.app_handle);
+        let evidence = result
+            .language_code
+            .map(OutputLanguageEvidence::ModelDetected)
+            .unwrap_or(OutputLanguageEvidence::Unknown);
+        Ok(post_process_transcription_text(
+            result.text,
+            &settings,
+            false,
+            &evidence,
+            &[],
+        ))
     }
 
     /// Shared handle to the stream router, used by the audio recorder to feed
@@ -1105,6 +1179,19 @@ impl TranscriptionManager {
 
     /// Abandon any active stream without producing text (e.g. on cancel).
     pub fn cancel_stream(&self) {
+        // Hold the lifecycle lock through router.take(): otherwise a new cloud
+        // session could install its route after this cancellation removes the
+        // old one, only for the trailing local take() to close the new route.
+        let mut active = self.cloud_stream.lock().unwrap();
+        if let Some(session) = active.take() {
+            self.cloud_generation.fetch_add(1, Ordering::AcqRel);
+            let mut route = self.router.cloud.lock().unwrap();
+            if route.as_ref().is_some_and(|s| Arc::ptr_eq(s, &session)) {
+                self.router.open.store(false, Ordering::Release);
+                route.take();
+            }
+            session.cancel();
+        }
         if let Some(tx) = self.router.take() {
             let _ = tx.send(StreamCmd::Cancel);
         }

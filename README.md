@@ -18,20 +18,25 @@ These are personal, unsigned Windows / ad-hoc signed Mac builds. macOS Gatekeepe
 
 1. Grant microphone/accessibility permissions.
 2. On the model onboarding screen (or **Models → ElevenLabs**), enter your own ElevenLabs API key with Speech-to-Text access.
-3. Select **Scribe v2** (default) or **Scribe v1** and click **Save and use ElevenLabs**.
+3. Select **Scribe v2** (default), **Scribe v1**, or **Scribe v2 Realtime**, then click **Save and use ElevenLabs**.
 4. Record with Handy's shortcut, then stop. The result is pasted through the existing Handy pipeline.
 
 Keys live in **macOS Keychain / Windows Credential Manager**, separately on each computer, never in settings JSON or source control. Saving a key is local-only; the first transcription verifies it with ElevenLabs. API usage is charged to your ElevenLabs account. Recordings are sent to ElevenLabs only while cloud transcription is selected. Handy still saves local transcription history/recordings according to its retention settings.
 
 Language selection (including automatic detection), local custom-word correction, and the existing post-processing/paste flow are retained. Select a downloaded local model to return to offline transcription. The previous local model remains remembered. New ElevenLabs UI copy is English and Russian; other locales fall back to English for this section.
 
-This integration uses the **batch** endpoint after recording stops. It does not support Scribe Realtime/live preview, cloud translation, paid keyterm biasing, or automatic retries. The local benchmarking CLI `--transcribe-file` requires selecting a local model first. ElevenLabs key storage is intentionally available only on macOS and Windows.
+Both transcription modes remain available:
+
+- **Scribe v2 / v1:** upload the recording after you stop and wait for the completed text. Scribe v2 remains the default.
+- **Scribe v2 Realtime:** stream audio to ElevenLabs while you speak, reducing the work left after you stop. Select the **Live** recording overlay to see partial text; streaming is active even with the overlay hidden. The completed transcript is pasted once you stop; connection and finalization still add some delay. Cancelling stops further streaming but cannot recall audio already sent.
+
+Realtime does not type unfinished words into the active application. The final transcript still follows Handy's history, local custom-word correction, optional post-processing, and paste flow. Cloud translation, paid keyterm biasing, and automatic retries are not supported. The local benchmarking CLI `--transcribe-file` requires selecting a local model first. ElevenLabs key storage is intentionally available only on macOS and Windows.
 
 ## Development and attribution
 
 Based on upstream `f6b3f82`. The closed [PR #1241](https://github.com/cjpais/Handy/pull/1241) by christophostertag informed the WAV/multipart approach; this fork adapts the integration to current Handy rather than merging that outdated branch.
 
-See [BUILD.md](BUILD.md) for native dependencies. Run `bun run build`, `bun run lint`, `bun run check:translations`, `bun run format:check`, `bun run test:playwright`, and `cargo test --manifest-path src-tauri/Cargo.toml --lib elevenlabs::client::tests`. Request-contract tests use a local mock HTTP server and no API credentials. Native installer builds run on GitHub's Mac/Windows runners.
+See [BUILD.md](BUILD.md) for native dependencies. Run `bun run build`, `bun run lint`, `bun run check:translations`, `bun run format:check`, `bun run test:playwright`, and `cargo test --manifest-path src-tauri/Cargo.toml --lib elevenlabs::client::tests`. Request-contract tests use local mock servers and no API credentials. A real microphone-to-ElevenLabs session still needs testing with your key on your computer; mocked tests do not validate API access or end-to-end latency. Native installer builds run on GitHub's Mac/Windows runners.
 
 ---
 
