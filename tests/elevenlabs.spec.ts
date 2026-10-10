@@ -8,7 +8,7 @@ window.$RefreshSig$ = () => (type) => type;
 window.__vite_plugin_react_preamble_installed__ = true;
 </script></head><body><div id="test-root"></div><script type="module">
 import React from '/node_modules/.vite/deps/react.js';
-import { createRoot } from '/node_modules/.vite/deps/react-dom_client.js';
+import ReactDOM from '/node_modules/.vite/deps/react-dom_client.js';
 import i18n from '/src/i18n/index.ts';
 import '/src/App.css';
 import { useSettingsStore } from '/src/stores/settingsStore.ts';
@@ -16,7 +16,7 @@ import { ElevenLabsSettings } from '/src/components/settings/models/ElevenLabsSe
 await i18n.changeLanguage('en');
 const settings = () => ({selected_model:'local-model',elevenlabs_enabled:window.cloud.enabled,elevenlabs_model:window.cloud.model});
 useSettingsStore.setState({isLoading:false,settings:settings(),refreshSettings:async()=>{useSettingsStore.setState({settings:settings()})}});
-createRoot(document.getElementById('test-root')).render(React.createElement(ElevenLabsSettings,{onActivated:()=>{window.activated=true}}));
+ReactDOM.createRoot(document.getElementById('test-root')).render(React.createElement(ElevenLabsSettings,{onActivated:()=>{window.activated=true}}));
 </script></body></html>`;
 
 test.beforeEach(async ({ page }) => {
